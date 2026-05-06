@@ -15,4 +15,12 @@ service:
   # Optional static NodePort (30000–32767). Omit or set null for auto-assignment.
   nodePort: 30888
 
+# Envoy Gateway (Gateway API): add matching listener on Gateway yunji-gateway first, or use chart + ops runbook.
+httproute:
+  enabled: true
+  hostname: yunjitest-hello.yunjisoft.com
+  gatewayName: yunji-gateway
+  gatewayNamespace: envoy-gateway-system
+  listenerSectionName: yunjitest-hello-http
+
 resources: {}
