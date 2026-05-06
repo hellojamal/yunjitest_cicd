@@ -10,7 +10,8 @@ Repository: [hellojamal/yunjitest_cicd](https://github.com/hellojamal/yunjitest_
 |------|---------|
 | `app/` | Static page + `Dockerfile` (Nginx Alpine) |
 | `helm/hellok8s/` | Helm chart (Deployment + Service) |
-| `.github/workflows/ci.yml` | CI: `helm lint`, build image; on `main` push also **push to GHCR** |
+| `.github/workflows/ci.yml` | `validate` on GitHub-hosted; **`ship` on `arc-runners`**: push to **GHCR + Harbor**, bump Helm chart, **Helm OCI push** (Argo pulls from Harbor) |
+| `argocd/` | Argo `Application` targeting **`cicd-system`** |
 
 ## Local checks
 
@@ -35,11 +36,25 @@ kubectl port-forward svc/my-hello-hellok8s 8080:80
 
 Use your own registry by overriding `image.repository` / `image.tag`.
 
-## CI behaviour
+## CI / CD behaviour
 
 - **Pull requests**: `helm lint`, render chart, **Docker build only** (no push).
-- **Push to `main`**: same checks, then **build + push** to  
-  `ghcr.io/hellojamal/yunjitest_cicd/hellok8s:latest` and `:SHA`.
+- **Push to `main`**: `ship` on **`arc-runners`** pushes image to **GHCR** and **`192.168.10.121:30003/library/hellok8s`**, bumps **`helm/hellok8s`**, pushes **Helm OCI** to Harbor → **Argo CD** syncs **`cicd-system`** (chart `targetRevision: *`).
+
+### Harbor + Argo prerequisites
+
+1. **Repo Secrets** (Settings → Secrets and variables → Actions): `HARBOR_OCI_REGISTRY` (e.g. `192.168.10.121:30003`), `HARBOR_OCI_USERNAME`, `HARBOR_OCI_PASSWORD`.  
+2. **Harbor push is ON by default.** Set repo Variable **`HARBOR_HELM_PUSH_ENABLED=false`** only if you want **GHCR-only** (no Harbor image / no Helm OCI / Argo will not see new chart versions from CI).  
+3. **Self-signed Harbor TLS**: the workflow configures **Buildx** with `insecure = true` for `192.168.10.121:30003` so **docker push** succeeds. The Helm chart **defaults `image.repository` to GHCR** so pods schedule on every node; after **all** worker nodes have containerd `insecure_skip_verify` (and `systemctl restart containerd`), you may switch `helm/hellok8s/values.yaml` to `192.168.10.121:30003/library/hellok8s` for runtime pull from Harbor only.
+
+On **nodes**, example (`/etc/containerd/config.toml` snippet):
+
+```toml
+[plugins."io.containerd.grpc.v1.cri".registry.configs."192.168.10.121:30003".tls]
+  insecure_skip_verify = true
+```
+
+4. If the Harbor **`library`** project is **private**, create a pull secret in `cicd-system` and set `imagePullSecrets` in `helm/hellok8s/values.yaml`.
 
 ### Self-hosted runners (ARC)
 

@@ -3,7 +3,7 @@ replicaCount: 1
 nameOverride: ""
 fullnameOverride: ""
 
-# Runtime pull: GHCR (nodes trust public TLS). CI also pushes the same image to Harbor (library/hellok8s) for catalog/OCI.
+# Runtime pull: use GHCR until every node has Harbor TLS (insecure_skip_verify or trusted CA); CI still mirrors to Harbor.
 image:
   repository: ghcr.io/hellojamal/yunjitest_cicd/hellok8s
   tag: latest
@@ -14,7 +14,9 @@ service:
   type: ClusterIP
   port: 80
 
-# Optional: [{ name: harbor-regcred }] if Harbor project requires pull secret.
+# If Harbor project is private, create pull secret in cicd-system and list it here, e.g.:
+#   kubectl create secret docker-registry harbor-library-pull -n cicd-system \
+#     --docker-server=192.168.10.121:30003 --docker-username=admin --docker-password='<password>'
 imagePullSecrets: []
 
 # Envoy Gateway (Gateway API): add matching listener on Gateway yunji-gateway first, or use chart + ops runbook.

@@ -1,5 +1,5 @@
 # GitOps: GitHub → Actions (arc-runners) → Docker image + Helm OCI in Harbor → Argo CD syncs into cicd-system.
-# Set repo Variable HARBOR_HELM_PUSH_ENABLED=true + Harbor Secrets (see .github/workflows/ci.yml).
+# Harbor push defaults ON in CI unless Variable HARBOR_HELM_PUSH_ENABLED=false. See .github/workflows/ci.yml.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

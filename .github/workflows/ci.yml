@@ -1,8 +1,12 @@
-# CI/CD (single app namespace target: cicd-system):
+# CI/CD (app in cicd-system):
 # - validate: GitHub-hosted — helm lint / template; PR docker build (no push).
-# - ship: self-hosted ARC `arc-runners` (namespace cicd-runner) — build/push image to GHCR + Harbor,
-#         optional Helm OCI push + bot commit when HARBOR_HELM_PUSH_ENABLED=true.
-# - cicd-system: Argo CD + Harbor + demo Deployment/Service/HTTPRoute (GitOps from Harbor OCI chart).
+# - ship: arc-runners — push image to GHCR + Harbor (Helm OCI to Harbor) unless disabled below.
+#
+# Harbor push + Helm OCI: **enabled by default** when repo Variable HARBOR_HELM_PUSH_ENABLED is unset.
+# Set repo Variable HARBOR_HELM_PUSH_ENABLED=false to push **GHCR only** (no Harbor / no Argo chart bump).
+# Secrets (required for Harbor): HARBOR_OCI_REGISTRY, HARBOR_OCI_USERNAME, HARBOR_OCI_PASSWORD
+#
+# Self-signed Harbor: Buildx uses registry config insecure=true so docker push succeeds.
 
 name: CI
 
@@ -80,8 +84,13 @@ jobs:
         with:
           version: v3.18.4
 
+      # BuildKit: allow HTTPS registry with self-signed cert (Harbor NodePort 30003)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          config-inline: |
+            [registry."192.168.10.121:30003"]
+              insecure = true
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -91,7 +100,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Log in to Harbor (container registry + Helm OCI)
-        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.HARBOR_DOCKER_REGISTRY }}
@@ -99,7 +108,7 @@ jobs:
           password: ${{ secrets.HARBOR_OCI_PASSWORD }}
 
       - name: Build and push image (GHCR + Harbor)
-        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
         uses: docker/build-push-action@v6
         with:
           context: ./app
@@ -111,7 +120,7 @@ jobs:
             ${{ env.HARBOR_IMAGE_REPO }}:${{ github.sha }}
 
       - name: Build and push image (GHCR only)
-        if: vars.HARBOR_HELM_PUSH_ENABLED != 'true'
+        if: vars.HARBOR_HELM_PUSH_ENABLED == 'false'
         uses: docker/build-push-action@v6
         with:
           context: ./app
@@ -121,7 +130,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Install yq (Helm GitOps)
-        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
         run: |
           set -euo pipefail
           YQ_VER=v4.44.3
@@ -129,8 +138,8 @@ jobs:
           chmod +x /tmp/yq
           sudo mv /tmp/yq /usr/local/bin/yq
 
-      - name: Bump Helm image tag + chart patch (keep GHCR repo for kubelet TLS)
-        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+      - name: Bump Helm image.tag + chart patch (repo stays GHCR in git; Harbor gets same tags via docker push)
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
         run: |
           set -euo pipefail
           yq -i '.image.tag = strenv(TAG)' helm/hellok8s/values.yaml
@@ -142,13 +151,13 @@ jobs:
           TAG: ${{ github.sha }}
 
       - name: Helm package
-        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
         run: |
           set -euo pipefail
           helm package ./helm/hellok8s --destination /tmp
 
       - name: Helm OCI push to Harbor
-        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
         env:
           HARBOR_HOST: ${{ secrets.HARBOR_OCI_REGISTRY }}
           HARBOR_USER: ${{ secrets.HARBOR_OCI_USERNAME }}
@@ -156,7 +165,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${HARBOR_HOST:-}" ] || [ -z "${HARBOR_PASS:-}" ]; then
-            echo "::error::Set secrets HARBOR_OCI_REGISTRY, HARBOR_OCI_USERNAME, HARBOR_OCI_PASSWORD when HARBOR_HELM_PUSH_ENABLED is true."
+            echo "::error::Harbor push is on by default. Add repo Secrets: HARBOR_OCI_REGISTRY (e.g. 192.168.10.121:30003), HARBOR_OCI_USERNAME, HARBOR_OCI_PASSWORD — or set Variable HARBOR_HELM_PUSH_ENABLED=false for GHCR-only."
             exit 1
           fi
           VER=$(grep '^version:' helm/hellok8s/Chart.yaml | awk '{print $2}')
@@ -166,7 +175,7 @@ jobs:
           helm push "$TGZ" "oci://${HARBOR_HOST}/library" --insecure-skip-tls-verify
 
       - name: Commit Helm chart + values for GitOps traceability
-        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
