@@ -9,7 +9,9 @@ image:
   pullPolicy: IfNotPresent
 
 service:
-  type: ClusterIP
+  type: NodePort
   port: 80
+  # Optional static NodePort (30000–32767). Omit or set null for auto-assignment.
+  nodePort: 30888
 
 resources: {}

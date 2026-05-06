@@ -7,7 +7,7 @@ on:
     branches: [main, master]
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -52,6 +52,77 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # --- Optional: push Helm OCI to Harbor for Argo CD (cluster has no stable GitHub egress) ---
+      # Repo → Settings → Variables: HARBOR_HELM_PUSH_ENABLED = true
+      # Repo → Settings → Secrets: HARBOR_OCI_REGISTRY (host:port, e.g. 192.168.10.121:30003),
+      #   HARBOR_OCI_USERNAME, HARBOR_OCI_PASSWORD
+      - name: Install yq (Helm GitOps)
+        if: >-
+          github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          YQ_VER=v4.44.3
+          curl -fsSL "https://github.com/mikefarah/yq/releases/download/${YQ_VER}/yq_linux_amd64" -o /tmp/yq
+          chmod +x /tmp/yq
+          sudo mv /tmp/yq /usr/local/bin/yq
+
+      - name: Bump Helm image.tag and Chart patch (for Harbor OCI)
+        if: >-
+          github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          yq -i '.image.tag = strenv(TAG)' helm/hellok8s/values.yaml
+          v=$(grep '^version:' helm/hellok8s/Chart.yaml | awk '{print $2}' | tr -d '"' | tr -d "'")
+          IFS=. read -r major minor patch <<<"$v"
+          patch=$((patch + 1))
+          sed -i "s/^version:.*/version: ${major}.${minor}.${patch}/" helm/hellok8s/Chart.yaml
+        env:
+          TAG: ${{ github.sha }}
+
+      - name: Helm package
+        if: >-
+          github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          helm package ./helm/hellok8s --destination /tmp
+
+      - name: Helm OCI push to Harbor
+        if: >-
+          github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        env:
+          HARBOR_HOST: ${{ secrets.HARBOR_OCI_REGISTRY }}
+          HARBOR_USER: ${{ secrets.HARBOR_OCI_USERNAME }}
+          HARBOR_PASS: ${{ secrets.HARBOR_OCI_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HARBOR_HOST:-}" ] || [ -z "${HARBOR_PASS:-}" ]; then
+            echo "::error::Set secrets HARBOR_OCI_REGISTRY, HARBOR_OCI_USERNAME, HARBOR_OCI_PASSWORD when HARBOR_HELM_PUSH_ENABLED is true."
+            exit 1
+          fi
+          VER=$(grep '^version:' helm/hellok8s/Chart.yaml | awk '{print $2}')
+          TGZ="/tmp/hellok8s-${VER}.tgz"
+          test -f "$TGZ"
+          echo "$HARBOR_PASS" | helm registry login "$HARBOR_HOST" -u "${HARBOR_USER:-admin}" --password-stdin --insecure
+          helm push "$TGZ" "oci://${HARBOR_HOST}/library" --insecure-skip-tls-verify
+
+      - name: Commit Helm chart + values for GitOps traceability
+        if: >-
+          github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add helm/hellok8s/values.yaml helm/hellok8s/Chart.yaml
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+            exit 0
+          fi
+          git commit -m "chore(gitops): image ${TAG}, chart bump for Argo/Harbor [skip ci]"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:${GITHUB_REF_NAME}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.sha }}
 
       - name: Docker build only (PR)
         if: github.event_name == 'pull_request'
