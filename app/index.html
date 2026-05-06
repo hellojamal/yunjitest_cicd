@@ -14,6 +14,7 @@
   <h1>Hello World — Hello K8s</h1>
   <p>This page is served by <strong>Nginx</strong> in a minimal demo app.</p>
   <p><strong>GitOps:</strong> push to <code>main</code> → GitHub Actions builds/pushes image → Helm <code>image.tag</code> updated → Argo CD auto-sync deploys.</p>
+  <p data-cicd="arc-runners">CI runner: <code>arc-runners</code> (namespace <code>cicd-runner</code>) · CD: Harbor OCI + Argo in <code>cicd-system</code>.</p>
   <p>Deploy with Helm: <code>helm install my-hello ./helm/hellok8s</code></p>
 </body>
 </html>

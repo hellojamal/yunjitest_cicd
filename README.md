@@ -41,9 +41,11 @@ Use your own registry by overriding `image.repository` / `image.tag`.
 - **Push to `main`**: same checks, then **build + push** to  
   `ghcr.io/hellojamal/yunjitest_cicd/hellok8s:latest` and `:SHA`.
 
-### Self-hosted runners
+### Self-hosted runners (ARC)
 
-To use your ARC scale set, change `runs-on: ubuntu-latest` to `runs-on: arc-runners` in `.github/workflows/ci.yml`.
+The workflow uses **`runs-on: arc-runners`** for the **ship** job (image build + optional Helm push to Harbor). The Actions Runner Controller scale set **`arc-runners`** lives in namespace **`cicd-runner`** (ARC controller + listener); **Argo CD** and **Harbor** run in **`cicd-system`**.
+
+Helm validation still runs on **`ubuntu-latest`** so PRs do not require a free runner.
 
 ## License
 
