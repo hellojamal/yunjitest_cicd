@@ -6,7 +6,8 @@ fullnameOverride: ""
 image:
   repository: ghcr.io/hellojamal/yunjitest_cicd/hellok8s
   tag: latest
-  pullPolicy: IfNotPresent
+  # Use Always when tag is "latest" so new images are picked up after CI pushes the same tag.
+  pullPolicy: Always
 
 service:
   type: NodePort
