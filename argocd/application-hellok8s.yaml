@@ -1,6 +1,5 @@
-# GitOps: GitHub (source) → Actions builds image + pushes Helm OCI to Harbor → Argo CD pulls chart here.
-# Argo cannot reach GitHub from this cluster; chart is published to Harbor by CI.
-# Set repository Variable HARBOR_HELM_PUSH_ENABLED=true and Secrets (see .github/workflows/ci.yml).
+# GitOps: GitHub → Actions (arc-runners) → Docker image + Helm OCI in Harbor → Argo CD syncs into cicd-system.
+# Set repo Variable HARBOR_HELM_PUSH_ENABLED=true + Harbor Secrets (see .github/workflows/ci.yml).
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -19,7 +18,7 @@ spec:
       releaseName: yunjitest-hello
   destination:
     server: https://kubernetes.default.svc
-    namespace: hello-k8s
+    namespace: cicd-system
   syncPolicy:
     automated:
       prune: true

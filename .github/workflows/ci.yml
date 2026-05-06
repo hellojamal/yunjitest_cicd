@@ -1,11 +1,8 @@
-# CI/CD layout (this repo):
-# - GitHub Actions: this workflow (PR + main).
-# - Self-hosted runners: ARC AutoscalingRunnerSet "arc-runners" in namespace cicd-runner (not cicd-system).
-# - cicd-system: Argo CD + Harbor (+ HTTPRoutes for UI).
-# - hello-k8s: demo app deployed by Argo from Harbor OCI Helm chart.
-#
-# CD path on main: push → arc-runners job builds/pushes image → (optional) Helm OCI push to Harbor → Argo pulls chart (targetRevision *).
-# Enable Harbor push: repo Variable HARBOR_HELM_PUSH_ENABLED=true + Secrets HARBOR_OCI_REGISTRY, HARBOR_OCI_USERNAME, HARBOR_OCI_PASSWORD.
+# CI/CD (single app namespace target: cicd-system):
+# - validate: GitHub-hosted — helm lint / template; PR docker build (no push).
+# - ship: self-hosted ARC `arc-runners` (namespace cicd-runner) — build/push image to GHCR + Harbor,
+#         optional Helm OCI push + bot commit when HARBOR_HELM_PUSH_ENABLED=true.
+# - cicd-system: Argo CD + Harbor + demo Deployment/Service/HTTPRoute (GitOps from Harbor OCI chart).
 
 name: CI
 
@@ -22,6 +19,8 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}/hellok8s
+  HARBOR_DOCKER_REGISTRY: "192.168.10.121:30003"
+  HARBOR_IMAGE_REPO: "192.168.10.121:30003/library/hellok8s"
 
 jobs:
   validate:
@@ -55,7 +54,7 @@ jobs:
           tags: hellok8s:pr-${{ github.event.number }}
 
   ship:
-    name: Build & optional Harbor CD (self-hosted ARC)
+    name: Build & Harbor CD (self-hosted ARC)
     runs-on: arc-runners
     needs: [validate]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
@@ -68,10 +67,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Runner smoke (Harbor + GHCR from cluster network)
+      - name: Runner smoke (Harbor + GHCR)
         run: |
           set -euo pipefail
-          curl -fsSL -m 15 -k "https://192.168.10.121:30003/api/v2.0/ping" | head -c 120 || true
+          curl -fsSL -m 15 -k "https://${HARBOR_DOCKER_REGISTRY}/api/v2.0/ping" | head -c 120 || true
           echo
           curl -fsSL -m 15 "https://ghcr.io/v2/" | head -c 80 || true
           echo
@@ -91,7 +90,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      - name: Log in to Harbor (container registry + Helm OCI)
+        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.HARBOR_DOCKER_REGISTRY }}
+          username: ${{ secrets.HARBOR_OCI_USERNAME }}
+          password: ${{ secrets.HARBOR_OCI_PASSWORD }}
+
+      - name: Build and push image (GHCR + Harbor)
+        if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./app
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.HARBOR_IMAGE_REPO }}:latest
+            ${{ env.HARBOR_IMAGE_REPO }}:${{ github.sha }}
+
+      - name: Build and push image (GHCR only)
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./app
@@ -109,7 +129,7 @@ jobs:
           chmod +x /tmp/yq
           sudo mv /tmp/yq /usr/local/bin/yq
 
-      - name: Bump Helm image.tag and Chart patch (for Harbor OCI)
+      - name: Bump Helm image tag + chart patch (keep GHCR repo for kubelet TLS)
         if: vars.HARBOR_HELM_PUSH_ENABLED == 'true'
         run: |
           set -euo pipefail

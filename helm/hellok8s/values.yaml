@@ -3,17 +3,19 @@ replicaCount: 1
 nameOverride: ""
 fullnameOverride: ""
 
+# Runtime pull: GHCR (nodes trust public TLS). CI also pushes the same image to Harbor (library/hellok8s) for catalog/OCI.
 image:
   repository: ghcr.io/hellojamal/yunjitest_cicd/hellok8s
   tag: latest
-  # Use Always when tag is "latest" so new images are picked up after CI pushes the same tag.
   pullPolicy: Always
 
+# ClusterIP avoids extra NodePort in shared cicd-system; use HTTPRoute / port-forward for access.
 service:
-  type: NodePort
+  type: ClusterIP
   port: 80
-  # Optional static NodePort (30000–32767). Omit or set null for auto-assignment.
-  nodePort: 30888
+
+# Optional: [{ name: harbor-regcred }] if Harbor project requires pull secret.
+imagePullSecrets: []
 
 # Envoy Gateway (Gateway API): add matching listener on Gateway yunji-gateway first, or use chart + ops runbook.
 httproute:
