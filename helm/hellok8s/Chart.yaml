@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hellok8s
+description: Minimal Nginx "Hello K8s" demo for CI exercises
+type: application
+version: 0.1.0
+appVersion: "1.27"
