@@ -84,7 +84,9 @@ Helm 校验 **`validate`** 仍使用 **`ubuntu-latest`**，不依赖自建 Runne
 
 ### 全流程没跑起来：Harbor / Helm OCI / commit 全是 Skipped
 
-工作流里这些步骤都带 **`if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'`**。只要仓库（或组织）里 **Configuration variable** **`HARBOR_HELM_PUSH_ENABLED`** 的值是**字符串** **`false`**，就会只执行 **「Build and push image (GHCR only)」**，其余 Harbor、yq、bump chart、Helm OCI、git push **会全部跳过**——看起来像「CI 没生效」。
+**（历史）** 在合并本分支之前，GitHub 上曾使用单 job **`build-and-helm`**，且 Harbor 相关步骤的条件是 **`vars.HARBOR_HELM_PUSH_ENABLED == 'true'`**：变量**未设置**或不是精确小写 **`true`** 时，**所有** Harbor / Helm OCI 步骤都会跳过——这是多数人「改了配置仍不跑全流程」的原因。
+
+当前 **`.github/workflows/ci.yml`** 使用 **`!= 'false'`**（默认走 Harbor 全流程，仅显式 **`false`** 时改为 GHCR-only）。只要仓库（或组织）里 **`HARBOR_HELM_PUSH_ENABLED`** 的值是**字符串** **`false`**，才会只跑 **「Build and push image (GHCR only)」** 并跳过其余步骤。
 
 **处理：** **Settings** → **Secrets and variables** → **Actions** → **Variables** → 找到 **`HARBOR_HELM_PUSH_ENABLED`** → **Remove**；或改成 **`true`** / 任意非 `false` 的值。保存后重新 **push 到 `main`/`master`**（`ship` 仅在这些分支的 push 上运行）。
 
