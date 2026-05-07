@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hello K8s</title>
+  <title>v2_企业级CICD流程化环境打通验证</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 3rem; line-height: 1.5; }
     h1 { color: #326ce5; }
@@ -11,10 +11,8 @@
   </style>
 </head>
 <body>
-  <h1>Hello World — Hello K8s</h1>
-  <p>This page is served by <strong>Nginx</strong> in a minimal demo app.</p>
-  <p><strong>GitOps:</strong> push to <code>main</code> → GitHub Actions builds/pushes image → Helm <code>image.tag</code> updated → Argo CD auto-sync deploys.</p>
-  <p data-cicd="arc-runners">CI: <code>arc-runners</code> (<code>cicd-runner</code>) → GHCR + Harbor registry · CD: Harbor Helm OCI → Argo → workload in <code>cicd-system</code>.</p>
+  <h1>v2_校对 github actions + runner CI + argoCD + harbor + K8S 已经顺利打通，正在测试、验收ing</h1>
+  <p>This page is served by <strong>Nginx</strong>. <strong>GitOps:</strong> push to <code>main</code> → Actions (e.g. <code>arc-runners</code>) → GHCR + Harbor → Helm OCI → Argo CD in <code>cicd-system</code>.</p>
   <p>Deploy with Helm: <code>helm install my-hello ./helm/hellok8s</code></p>
 </body>
 </html>
