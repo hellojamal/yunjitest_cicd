@@ -12,14 +12,39 @@ Repository: [hellojamal/yunjitest_cicd](https://github.com/hellojamal/yunjitest_
 | `helm/hellok8s/` | Helm chart (Deployment + Service) |
 | `.github/workflows/ci.yml` | `validate` on GitHub-hosted; **`ship`** on **`arc-runners`** (or repo Variable **`SHIP_RUNS_ON`**): push to **GHCR + Harbor**, bump Helm chart, **Helm OCI push** (Argo pulls from Harbor) |
 | `argocd/` | Argo `Application` targeting **`cicd-system`** |
+| `Makefile` | **`make ci-local`**：提交前本地跑与 PR **validate** 同类的 **helm lint / template + docker build** |
+| `scripts/verify-cicd-cluster.sh` | 配置 **`KUBECONFIG`** 后检查 **`cicd-system` / `cicd-runner`**、Argo Application、Harbor ping |
 
 ## Local checks
+
+```bash
+make ci-local
+```
+
+等价于：
 
 ```bash
 helm lint ./helm/hellok8s
 helm template demo ./helm/hellok8s
 docker build -t hellok8s:dev ./app
 ```
+
+集群侧自检（可选，需能访问集群与 Harbor）：
+
+```bash
+./scripts/verify-cicd-cluster.sh
+```
+
+## 端到端 CI/CD 检查清单（推送 `main` 前）
+
+| 环节 | 需满足 |
+|------|--------|
+| **GitHub 仓库** | Secrets：`HARBOR_OCI_REGISTRY`、`HARBOR_OCI_USERNAME`、`HARBOR_OCI_PASSWORD`；勿将 **`HARBOR_HELM_PUSH_ENABLED`** 设为 `false`（除非只要 GHCR）。Workflow 权限允许 **`GITHUB_TOKEN`** 写 `contents`/`packages`（`ship` job 已设）。 |
+| **Runner** | 标签与 **`runs-on`** / Variable **`SHIP_RUNS_ON`** 一致（默认 **`arc-runners`**）；命名空间常见 **`cicd-runner`**。 |
+| **BuildKit（kubernetes）** | 在 **`cicd-system`** 起 builder 时，已 **`kubectl apply`** 并改好 SA：`deploy/k8s/arc-buildx-kubernetes-rbac.yaml`。 |
+| **Harbor** | 存在 **`library/hellok8s`** OCI 项目；地址与 workflow/env **`192.168.10.121:30003`** 一致。 |
+| **Argo CD** | 已应用 **`argocd/application-hellok8s.yaml`**；**`Application`** 在 **`cicd-system`**；Argo **Project**（如 `default`）允许部署到 **`cicd-system`**；能拉 **`oci://192.168.10.121:30003/library/hellok8s`**。 |
+| **Helm chart** | 本仓库 **`helm/hellok8s`** 与 CI bump / **`helm push`** 的 chart 名、版本一致。 |
 
 ## Install on Kubernetes (example)
 

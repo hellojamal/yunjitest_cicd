@@ -1,5 +1,8 @@
 # GitOps: GitHub → Actions (arc-runners) → Docker image + Helm OCI in Harbor → Argo CD syncs into cicd-system.
 # Harbor push defaults ON in CI unless Variable HARBOR_HELM_PUSH_ENABLED=false. See .github/workflows/ci.yml.
+#
+# 应用前请确认：Argo CD 的 AppProject（如 spec.project: default）允许将资源部署到 destination.namespace（cicd-system），
+# 且集群可拉取 oci://192.168.10.121:30003/library/hellok8s（Harbor 可达、凭据/匿名拉取策略正确）。
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
