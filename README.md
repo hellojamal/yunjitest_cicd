@@ -88,11 +88,26 @@ Helm 校验 **`validate`** 仍使用 **`ubuntu-latest`**，不依赖自建 Runne
 
 当前 **`.github/workflows/ci.yml`** 使用 **`!= 'false'`**（默认走 Harbor 全流程，仅显式 **`false`** 时改为 GHCR-only）。只要仓库（或组织）里 **`HARBOR_HELM_PUSH_ENABLED`** 的值是**字符串** **`false`**，才会只跑 **「Build and push image (GHCR only)」** 并跳过其余步骤。
 
-**处理：** **Settings** → **Secrets and variables** → **Actions** → **Variables** → 找到 **`HARBOR_HELM_PUSH_ENABLED`** → **Remove**；或改成 **`true`** / 任意非 `false` 的值。保存后重新 **push 到 `main`/`master`**（`ship` 仅在这些分支的 push 上运行）。
+**处理：** **Settings** → **Secrets and variables** → **Actions** → **Variables** → 找到 **`HARBOR_HELM_PUSH_ENABLED`** → **Remove**；或改成 **`true`** / 任意非 `false` 的值。保存后重新 **push 到 `main`/`master`**，或在 **Actions → CI → Run workflow** 手动触发（`ship` 仅在 **push / workflow_dispatch** 且分支为 **`main`/`master`** 时运行）。
 
 **确认：** 打开 **`ship`** 运行日志里的 **`Deployment mode (Harbor + Helm OCI)`** 步骤，会打印当前变量并给出 `notice`。
 
 **其它：** **`SHIP_RUNS_ON`** 只决定跑在哪类 Runner 上，**不会**单独关掉 Harbor 步骤；关掉全流程的是 **`HARBOR_HELM_PUSH_ENABLED=false`**。
+
+### 把本地改动同步到 GitHub（`hellojamal`）
+
+自动化助手**不能使用你的 GitHub 密码**，也无法在未授权环境中替你 `git push`。要在你账号下 **push 后自动联动** Actions → Harbor → Argo，需要你在本机或 CI 里完成**一次性** Git 授权，任选其一：
+
+1. **SSH（推荐）**  
+   - 将本机公钥（如 `~/.ssh/id_ed25519.pub`）添加到 GitHub：**Settings → SSH and GPG keys → New SSH key**。  
+   - 首次连接需信任主机：`ssh-keyscan github.com >> ~/.ssh/known_hosts`。  
+   - 推送：`git remote set-url origin git@github.com:hellojamal/yunjitest_cicd.git` 然后 `git push origin main`。
+
+2. **HTTPS + Personal Access Token**  
+   - GitHub 创建 **fine-grained 或 classic PAT**，至少包含对该仓库的 **contents: write**、**workflows**（若改 workflow）、以及 **packages: write**（推 GHCR）。  
+   - `git push` 时用户名填 **`hellojamal`**，密码填 **PAT**。
+
+推送成功后：**push 到 `main`** 会触发 **`validate` → `ship`**；也可在仓库 **Actions** 页打开 **CI** 工作流，用 **Run workflow** 手动跑同一套流程（无需新 commit）。
 
 ## External access（部署在 `cicd-system` 时）
 

@@ -1,6 +1,6 @@
 # CI/CD (app in cicd-system):
 # - validate: GitHub-hosted — helm lint / template; PR docker build (no push).
-# - ship: arc-runners — push image to GHCR + Harbor (Helm OCI to Harbor) unless disabled below.
+# - ship: arc-runners — push image to GHCR + Harbor (Helm OCI to Harbor) unless disabled below. Also runs on workflow_dispatch (main/master).
 #
 # Harbor push + Helm OCI: **enabled by default** when repo Variable HARBOR_HELM_PUSH_ENABLED is unset.
 # Set repo Variable HARBOR_HELM_PUSH_ENABLED=false to push **GHCR only** (no Harbor / no Argo chart bump).
@@ -20,6 +20,8 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # 在 Actions 页手动「Run workflow」也可跑完整 validate + ship（需选 main/master 分支）
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -67,7 +69,9 @@ jobs:
     # 与 GitHub ARC / Runner Scale Set 里配置的 runner 名称一致；或用 Variable SHIP_RUNS_ON 覆盖
     runs-on: ${{ vars.SHIP_RUNS_ON || 'arc-runners' }}
     needs: [validate]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     permissions:
       contents: write
       packages: write
