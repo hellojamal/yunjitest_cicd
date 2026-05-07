@@ -85,9 +85,11 @@ K8s 里的 **ARC runner Pod** 往往**没有** **`/var/run/docker.sock`**。`shi
 3. 否则若存在 **`/var/run/docker.sock`** → **`docker-container`**。  
 4. 否则 → **`kubernetes`**（在集群内起 BuildKit，不依赖本机 Docker）。
 
-使用 **`docker/setup-buildx-action@v3`**（Node 20），避免部分 ARC 镜像无法运行 **v4（Node 24）** 的 action。
+**`driver=kubernetes` 时**：不再使用 **`docker/setup-buildx-action`** 创建 builder（该 action 会先连 **`docker.sock`**，在无 Docker 的 ARC Pod 里必挂）。工作流会改为下载官方 **`buildx`** 二进制、`buildx create --driver kubernetes`，再用 **`buildx build --push`** 推镜像。有 **`docker.sock`** 时仍用 **`setup-buildx-action@v3`** + **`docker/build-push-action`**。
 
-**RBAC：** `driver=kubernetes` 时，runner 的 **ServiceAccount** 需能在 runner 所在命名空间内管理 **Deployment/StatefulSet/Pod** 等。模板见 **`deploy/k8s/arc-buildx-kubernetes-rbac.yaml`**（编辑占位符后执行 `kubectl apply -f deploy/k8s/arc-buildx-kubernetes-rbac.yaml`）。详见 [Buildx Kubernetes driver](https://docs.docker.com/build/builders/drivers/kubernetes/)。
+可选仓库 Variable **`BUILDX_K8S_NAMESPACE`**：指定 BuildKit 所在命名空间；不填则使用 **ServiceAccount 挂载的当前 Pod 命名空间**（或 `default`）。
+
+**RBAC：** 模板见 **`deploy/k8s/arc-buildx-kubernetes-rbac.yaml`**。详见 [Buildx Kubernetes driver](https://docs.docker.com/build/builders/drivers/kubernetes/)。
 
 #### 直接改仓库代码
 

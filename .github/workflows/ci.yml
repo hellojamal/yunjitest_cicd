@@ -52,17 +52,9 @@ jobs:
       - name: Helm template (dry-run render)
         run: helm template demo ./helm/hellok8s --set image.tag=ci-${{ github.sha }} > /tmp/rendered.yaml && head -n 40 /tmp/rendered.yaml
 
-      - name: Set up Docker Buildx (PR image smoke build)
-        if: github.event_name == 'pull_request'
-        uses: docker/setup-buildx-action@v3
-
       - name: Docker build only (PR)
         if: github.event_name == 'pull_request'
-        uses: docker/build-push-action@v6
-        with:
-          context: ./app
-          push: false
-          tags: hellok8s:pr-${{ github.event.number }}
+        run: docker build -t "hellok8s:pr-${{ github.event.number }}" ./app
 
   ship:
     name: Build & Harbor CD (self-hosted ARC)
@@ -108,8 +100,8 @@ jobs:
         with:
           version: v3.18.4
 
-      # K8s ARC 常无 docker.sock：自动选 kubernetes；有 sock 或 DinD 则用 docker-container。
-      # setup-buildx@v4 需 Node24，部分 ARC 镜像过旧；@v3 使用 Node20 更稳。
+      # K8s ARC 常无 docker.sock：自动选 kubernetes。注意：docker/setup-buildx-action 会先 docker info，
+      # 无 sock 时即 driver=kubernetes 也会失败 → kubernetes 路径用独立 buildx CLI + buildx build，不经该 action。
       - name: Choose Buildx driver
         id: bxpick
         env:
@@ -123,6 +115,11 @@ jobs:
             exit 0
           fi
           if [ -n "${BUILDX_DRIVER_VAR}" ]; then
+            if [ "${BUILDX_DRIVER_VAR}" = "docker-container" ] && [ ! -S /var/run/docker.sock ]; then
+              echo "driver=kubernetes" >> "$GITHUB_OUTPUT"
+              echo "::warning title=Buildx::BUILDX_DRIVER=docker-container ignored (no /var/run/docker.sock); using kubernetes"
+              exit 0
+            fi
             echo "driver=${BUILDX_DRIVER_VAR}" >> "$GITHUB_OUTPUT"
             echo "::notice title=Buildx::driver=${BUILDX_DRIVER_VAR} (repo Variable BUILDX_DRIVER)"
             exit 0
@@ -135,14 +132,48 @@ jobs:
             echo "::notice title=Buildx::driver=kubernetes (no Docker socket). If build fails with RBAC, apply deploy/k8s/arc-buildx-kubernetes-rbac.yaml"
           fi
 
-      - name: Set up Docker Buildx
-        id: buildx
+      # setup-buildx-action 在创建 builder 前会执行 docker info，无 sock 时即使用 kubernetes 也会失败 → kubernetes 用独立 buildx CLI
+      - name: Set up Docker Buildx (docker-container only)
+        id: buildx_sock
+        if: steps.bxpick.outputs.driver == 'docker-container'
         uses: docker/setup-buildx-action@v3
         with:
-          driver: ${{ steps.bxpick.outputs.driver }}
+          driver: docker-container
           buildkitd-config-inline: |
             [registry."192.168.10.121:30003"]
               insecure = true
+
+      - name: Set up Buildx kubernetes (standalone CLI, no docker.sock)
+        id: buildx_k8s
+        if: steps.bxpick.outputs.driver == 'kubernetes'
+        env:
+          BUILDX_VER: v0.20.1
+          BUILDX_K8S_NS: ${{ vars.BUILDX_K8S_NAMESPACE }}
+        run: |
+          set -euo pipefail
+          ARCH=$(uname -m)
+          case "$ARCH" in
+            x86_64) DLARCH=amd64 ;;
+            aarch64) DLARCH=arm64 ;;
+            *) echo "::error::Unsupported ARCH=$ARCH"; exit 1 ;;
+          esac
+          mkdir -p "$HOME/bin"
+          curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-${DLARCH}" -o "$HOME/bin/buildx"
+          chmod +x "$HOME/bin/buildx"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          buildx version
+          printf '%s\n' '[registry."192.168.10.121:30003"]' '  insecure = true' > /tmp/buildkitd.toml
+          NS="${BUILDX_K8S_NS:-}"
+          if [ -z "${NS}" ]; then
+            NS="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null || true)"
+          fi
+          NS="${NS:-default}"
+          echo "buildx kubernetes namespace=${NS}"
+          BUILDER="ci-gha-${{ github.run_id }}-${{ github.run_attempt }}"
+          buildx rm -f "$BUILDER" 2>/dev/null || true
+          buildx create --name "$BUILDER" --driver kubernetes --driver-opt "namespace=${NS}" --buildkitd-config /tmp/buildkitd.toml --use
+          buildx inspect --bootstrap
+          echo "name=${BUILDER}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -160,10 +191,10 @@ jobs:
           password: ${{ secrets.HARBOR_OCI_PASSWORD }}
 
       - name: Build and push image (GHCR + Harbor)
-        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false' && steps.bxpick.outputs.driver == 'docker-container'
         uses: docker/build-push-action@v6
         with:
-          builder: ${{ steps.buildx.outputs.name }}
+          builder: ${{ steps.buildx_sock.outputs.name }}
           context: ./app
           push: true
           tags: |
@@ -172,16 +203,53 @@ jobs:
             ${{ env.HARBOR_IMAGE_REPO }}:latest
             ${{ env.HARBOR_IMAGE_REPO }}:${{ github.sha }}
 
+      - name: Build and push image (GHCR + Harbor, kubernetes builder)
+        if: vars.HARBOR_HELM_PUSH_ENABLED != 'false' && steps.bxpick.outputs.driver == 'kubernetes'
+        env:
+          BUILDER: ${{ steps.buildx_k8s.outputs.name }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          HARBOR_IMAGE_REPO: ${{ env.HARBOR_IMAGE_REPO }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          buildx build \
+            --builder "$BUILDER" \
+            --push \
+            --provenance=false \
+            --tag "${REGISTRY}/${IMAGE_NAME}:latest" \
+            --tag "${REGISTRY}/${IMAGE_NAME}:${SHA}" \
+            --tag "${HARBOR_IMAGE_REPO}:latest" \
+            --tag "${HARBOR_IMAGE_REPO}:${SHA}" \
+            ./app
+
       - name: Build and push image (GHCR only)
-        if: vars.HARBOR_HELM_PUSH_ENABLED == 'false'
+        if: vars.HARBOR_HELM_PUSH_ENABLED == 'false' && steps.bxpick.outputs.driver == 'docker-container'
         uses: docker/build-push-action@v6
         with:
-          builder: ${{ steps.buildx.outputs.name }}
+          builder: ${{ steps.buildx_sock.outputs.name }}
           context: ./app
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Build and push image (GHCR only, kubernetes builder)
+        if: vars.HARBOR_HELM_PUSH_ENABLED == 'false' && steps.bxpick.outputs.driver == 'kubernetes'
+        env:
+          BUILDER: ${{ steps.buildx_k8s.outputs.name }}
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          buildx build \
+            --builder "$BUILDER" \
+            --push \
+            --provenance=false \
+            --tag "${REGISTRY}/${IMAGE_NAME}:latest" \
+            --tag "${REGISTRY}/${IMAGE_NAME}:${SHA}" \
+            ./app
 
       - name: Install yq (Helm GitOps)
         if: vars.HARBOR_HELM_PUSH_ENABLED != 'false'
