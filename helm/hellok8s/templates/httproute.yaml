@@ -6,9 +6,19 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "hellok8s.labels" . | nindent 4 }}
+  {{- with .Values.httproute.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   hostnames:
+    {{- if .Values.httproute.hostnames }}
+    {{- range .Values.httproute.hostnames }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- else }}
     - {{ .Values.httproute.hostname | quote }}
+    {{- end }}
   parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway

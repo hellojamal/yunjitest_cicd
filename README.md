@@ -62,6 +62,15 @@ The workflow uses **`runs-on: arc-runners`** for the **ship** job (image build +
 
 Helm validation still runs on **`ubuntu-latest`** so PRs do not require a free runner.
 
+## External access（部署在 `cicd-system` 时）
+
+| 方式 | URL / 命令 |
+|------|------------|
+| **域名（HTTPRoute + Envoy Gateway）** | `http://yunjitest-hello.yunjisoft.com/` — DNS 指向网关；或 `curl -H "Host: yunjitest-hello.yunjisoft.com" http://<节点IP>:31080/`（Envoy 常见 NodePort **31080**） |
+| **NodePort（直连 IP）** | `http://<任意 Ready 节点内网IP>:30888/` — 由 Helm `Service` 暴露，**无需** `Host` 头 |
+
+在 Gateway `yunji-gateway` 上需存在 listener **`yunjitest-hello-http`**，且 `hostname` 与 `httproute.hostname` 一致；若改域名，请同步 patch Gateway 或增加 listener。Helm 中可设置 `httproute.hostnames: ["a.example.com","b.example.com"]`（须与网关 listener 策略匹配）。
+
 ## License
 
 MIT (or as you prefer — adjust if needed).

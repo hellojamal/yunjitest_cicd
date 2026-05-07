@@ -9,20 +9,24 @@ image:
   tag: latest
   pullPolicy: Always
 
-# ClusterIP avoids extra NodePort in shared cicd-system; use HTTPRoute / port-forward for access.
+# NodePort: direct URL http://<任意节点IP>:<nodePort>/ （无需 Host 头）
 service:
-  type: ClusterIP
+  type: NodePort
   port: 80
+  nodePort: 30888
 
 # If Harbor project is private, create pull secret in cicd-system and list it here, e.g.:
 #   kubectl create secret docker-registry harbor-library-pull -n cicd-system \
 #     --docker-server=192.168.10.121:30003 --docker-username=admin --docker-password='<password>'
 imagePullSecrets: []
 
-# Envoy Gateway (Gateway API): add matching listener on Gateway yunji-gateway first, or use chart + ops runbook.
+# HTTPRoute: 域名访问 http://<hostname>/ （经 Envoy；需在 Gateway 上存在同名 listener）
+# 若设 hostnames 列表则覆盖 hostname；每个 hostname 须在 Gateway 上有对应 listener（或通配 listener）。
 httproute:
   enabled: true
   hostname: yunjitest-hello.yunjisoft.com
+  hostnames: []
+  annotations: {}
   gatewayName: yunji-gateway
   gatewayNamespace: envoy-gateway-system
   listenerSectionName: yunjitest-hello-http
