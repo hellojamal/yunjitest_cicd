@@ -7,6 +7,11 @@
 # Secrets (required for Harbor): HARBOR_OCI_REGISTRY, HARBOR_OCI_USERNAME, HARBOR_OCI_PASSWORD
 #
 # Self-signed Harbor: Buildx uses registry config insecure=true so docker push succeeds.
+#
+# ship 的 runs-on（在哪台机器上跑构建）：
+# - 默认：arc-runners（与集群里 ARC AutoscalingRunnerSet 的 scale-set 名称一致）
+# - 修改方式 1（推荐）：Repository variable SHIP_RUNS_ON（Settings → Secrets and variables → Actions → Variables → New repository variable），不是 Environments 页里的变量，除非给 ship 加 environment:
+# - 修改方式 2：直接改下面 job ship 的 runs-on 行（写死标签或矩阵）
 
 name: CI
 
@@ -59,7 +64,8 @@ jobs:
 
   ship:
     name: Build & Harbor CD (self-hosted ARC)
-    runs-on: arc-runners
+    # 与 GitHub ARC / Runner Scale Set 里配置的 runner 名称一致；或用 Variable SHIP_RUNS_ON 覆盖
+    runs-on: ${{ vars.SHIP_RUNS_ON || 'arc-runners' }}
     needs: [validate]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     permissions:
@@ -70,6 +76,20 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # 若下面显示为 false，Harbor 登录 / 双注册表 push / yq / Helm OCI / git commit 会全部跳过（仅 GHCR）
+      - name: Deployment mode (Harbor + Helm OCI)
+        env:
+          HARBOR_HELM_PUSH_ENABLED: ${{ vars.HARBOR_HELM_PUSH_ENABLED }}
+        run: |
+          set -euo pipefail
+          v="${HARBOR_HELM_PUSH_ENABLED:-}"
+          echo "Repository variable HARBOR_HELM_PUSH_ENABLED=${v:-<unset>}"
+          if [ "$v" = "false" ]; then
+            echo "::notice title=GHCR-only mode::Harbor / Helm OCI / chart commit steps are skipped. Delete repo Variable HARBOR_HELM_PUSH_ENABLED or set it to true to run the full CD path."
+          else
+            echo "::notice title=Full CD::Harbor + Helm OCI + GitOps commit steps will run (requires Harbor Secrets)."
+          fi
 
       - name: Runner smoke (Harbor + GHCR)
         run: |
