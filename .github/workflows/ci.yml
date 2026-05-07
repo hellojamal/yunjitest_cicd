@@ -158,18 +158,21 @@ jobs:
             *) echo "::error::Unsupported ARCH=$ARCH"; exit 1 ;;
           esac
           mkdir -p "$HOME/bin"
-          curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-${DLARCH}" -o "$HOME/bin/buildx"
-          chmod +x "$HOME/bin/buildx"
+          BXL="$HOME/bin/buildx"
+          curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-${DLARCH}" -o "$BXL"
+          chmod +x "$BXL"
+          # GITHUB_PATH 只作用于后续 step，本脚本内需 export PATH 或使用绝对路径
           echo "$HOME/bin" >> "$GITHUB_PATH"
-          buildx version
+          export PATH="$HOME/bin:$PATH"
+          "$BXL" version
           printf '%s\n' '[registry."192.168.10.121:30003"]' '  insecure = true' > /tmp/buildkitd.toml
           # 默认在 cicd-system 起 BuildKit；可用仓库 Variable BUILDX_K8S_NAMESPACE 覆盖
           NS="${BUILDX_K8S_NS:-cicd-system}"
           echo "buildx kubernetes namespace=${NS}"
           BUILDER="ci-gha-${{ github.run_id }}-${{ github.run_attempt }}"
-          buildx rm -f "$BUILDER" 2>/dev/null || true
-          buildx create --name "$BUILDER" --driver kubernetes --driver-opt "namespace=${NS}" --buildkitd-config /tmp/buildkitd.toml --use
-          buildx inspect --bootstrap
+          "$BXL" rm -f "$BUILDER" 2>/dev/null || true
+          "$BXL" create --name "$BUILDER" --driver kubernetes --driver-opt "namespace=${NS}" --buildkitd-config /tmp/buildkitd.toml --use
+          "$BXL" inspect --bootstrap
           echo "name=${BUILDER}" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
@@ -210,7 +213,9 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          buildx build \
+          export PATH="$HOME/bin:$PATH"
+          test -x "$HOME/bin/buildx"
+          "$HOME/bin/buildx" build \
             --builder "$BUILDER" \
             --push \
             --provenance=false \
@@ -240,7 +245,9 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          buildx build \
+          export PATH="$HOME/bin:$PATH"
+          test -x "$HOME/bin/buildx"
+          "$HOME/bin/buildx" build \
             --builder "$BUILDER" \
             --push \
             --provenance=false \

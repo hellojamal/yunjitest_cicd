@@ -85,7 +85,7 @@ K8s 里的 **ARC runner Pod** 往往**没有** **`/var/run/docker.sock`**。`shi
 3. 否则若存在 **`/var/run/docker.sock`** → **`docker-container`**。  
 4. 否则 → **`kubernetes`**（在集群内起 BuildKit，不依赖本机 Docker）。
 
-**`driver=kubernetes` 时**：不再使用 **`docker/setup-buildx-action`** 创建 builder（该 action 会先连 **`docker.sock`**，在无 Docker 的 ARC Pod 里必挂）。工作流会改为下载官方 **`buildx`** 二进制、`buildx create --driver kubernetes`，再用 **`buildx build --push`** 推镜像。有 **`docker.sock`** 时仍用 **`setup-buildx-action@v3`** + **`docker/build-push-action`**。
+**`driver=kubernetes` 时**：不再使用 **`docker/setup-buildx-action`** 创建 builder（该 action 会先连 **`docker.sock`**，在无 Docker 的 ARC Pod 里必挂）。工作流会改为下载官方 **`buildx`** 到 **`$HOME/bin/buildx`**，并在脚本内 **`export PATH`** 或使用 **`$HOME/bin/buildx`** 调用（**`GITHUB_PATH` 只影响后续 step**，同一 `run` 里不能直接当 PATH 用）。再用 **`buildx build --push`** 推镜像。有 **`docker.sock`** 时仍用 **`setup-buildx-action@v3`** + **`docker/build-push-action`**。
 
 可选仓库 Variable **`BUILDX_K8S_NAMESPACE`**：覆盖 BuildKit 所在命名空间；**不填时默认为 `cicd-system`**（与 Argo 应用命名空间一致）。
 
