@@ -76,6 +76,14 @@ On **nodes**, example (`/etc/containerd/config.toml` snippet):
 - 安装 **Actions Runner Controller（ARC）** 与 **Runner scale set** 时，**scale set 名称 / GitHub 里注册的 runner 标签** 要与 `SHIP_RUNS_ON` 或默认值一致。  
 - 若你安装时用的名字是 **`my-runners`**，则要么把 GitHub Variable 设为 **`my-runners`**，要么把集群里 scale set 改成 **`arc-runners`**，或把工作流默认值改成你的名称。
 
+#### Buildx 与 Docker socket（`failed to connect to docker API at unix:///var/run/docker.sock`）
+
+K8s 里的 **ARC runner Pod** 往往**没有**挂载 **`/var/run/docker.sock`**，默认 Buildx 的 **`docker-container`** 驱动会失败。本仓库 **`ship`** 已默认使用 **`driver: kubernetes`**（在集群内创建 BuildKit Pod，不依赖本机 Docker），并升级 **`docker/setup-buildx-action@v4`**。
+
+- **Runner 的 ServiceAccount** 需具备在同一命名空间（或你配置的命名空间）内创建 **Pod** 等资源的权限；若 Buildx 报 RBAC 错误，请为 ARC listener / runner 使用的 SA 增加相应 **Role**（参见 [Buildx Kubernetes driver](https://docs.docker.com/build/builders/drivers/kubernetes/)）。  
+- 若你在 runner 上已配置 **DinD** 或挂载了宿主机 **`docker.sock`**，可将仓库 Variable **`BUILDX_DRIVER`** 设为 **`docker-container`**，显式改回需要 Docker API 的模式。  
+- 若 **`SHIP_RUNS_ON=ubuntu-latest`**（在 GitHub 托管机上跑 `ship`），工作流会**自动**使用 **`docker-container`**，无需再设 `BUILDX_DRIVER`。
+
 #### 直接改仓库代码
 
 编辑 **`.github/workflows/ci.yml`** 中 **`ship`** 的 **`runs-on:`** 行（例如改为 `runs-on: [self-hosted, linux, x64, my-label]` 多标签形式，需与 ARC 文档一致）。

@@ -108,11 +108,15 @@ jobs:
         with:
           version: v3.18.4
 
-      # BuildKit: allow HTTPS registry with self-signed cert (Harbor NodePort 30003)
+      # K8s ARC runner 通常无 /var/run/docker.sock：用 kubernetes 驱动在集群内起 BuildKit Pod。
+      # 若 runner 已挂载 Docker（DinD/宿主机 sock），可设仓库 Variable BUILDX_DRIVER=docker-container
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        id: buildx
+        uses: docker/setup-buildx-action@v4
         with:
-          config-inline: |
+          # GitHub 托管 ship（SHIP_RUNS_ON=ubuntu-latest）必须用 docker-container；K8s ARC 默认 kubernetes
+          driver: ${{ vars.SHIP_RUNS_ON == 'ubuntu-latest' && 'docker-container' || (vars.BUILDX_DRIVER || 'kubernetes') }}
+          buildkitd-config-inline: |
             [registry."192.168.10.121:30003"]
               insecure = true
 
