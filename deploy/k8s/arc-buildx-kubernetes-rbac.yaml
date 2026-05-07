@@ -1,0 +1,35 @@
+# Buildx driver=kubernetes 会在当前命名空间创建 BuildKit（Deployment/StatefulSet 等）。
+# 将下面两处 YOUR_RUNNER_NAMESPACE / YOUR_RUNNER_SA 改成 ARC runner Pod 实际使用的命名空间与 ServiceAccount，
+# 然后执行：kubectl apply -f arc-buildx-kubernetes-rbac.yaml
+#
+# 如何查 SA：kubectl -n <runner-ns> get pod -l app.kubernetes.io/name=gha-runner-scale-set -o jsonpath='{.items[0].spec.serviceAccountName}{"\n"}'
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gha-buildx-kubernetes-driver
+  namespace: YOUR_RUNNER_NAMESPACE
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/exec", "secrets", "services", "configmaps", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gha-buildx-kubernetes-driver
+  namespace: YOUR_RUNNER_NAMESPACE
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gha-buildx-kubernetes-driver
+subjects:
+  - kind: ServiceAccount
+    name: YOUR_RUNNER_SA
+    namespace: YOUR_RUNNER_NAMESPACE

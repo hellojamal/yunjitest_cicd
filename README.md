@@ -78,11 +78,16 @@ On **nodes**, example (`/etc/containerd/config.toml` snippet):
 
 #### Buildx 与 Docker socket（`failed to connect to docker API at unix:///var/run/docker.sock`）
 
-K8s 里的 **ARC runner Pod** 往往**没有**挂载 **`/var/run/docker.sock`**，默认 Buildx 的 **`docker-container`** 驱动会失败。本仓库 **`ship`** 已默认使用 **`driver: kubernetes`**（在集群内创建 BuildKit Pod，不依赖本机 Docker），并升级 **`docker/setup-buildx-action@v4`**。
+K8s 里的 **ARC runner Pod** 往往**没有** **`/var/run/docker.sock`**。`ship` 会先 **自动选择 Buildx 驱动**：
 
-- **Runner 的 ServiceAccount** 需具备在同一命名空间（或你配置的命名空间）内创建 **Pod** 等资源的权限；若 Buildx 报 RBAC 错误，请为 ARC listener / runner 使用的 SA 增加相应 **Role**（参见 [Buildx Kubernetes driver](https://docs.docker.com/build/builders/drivers/kubernetes/)）。  
-- 若你在 runner 上已配置 **DinD** 或挂载了宿主机 **`docker.sock`**，可将仓库 Variable **`BUILDX_DRIVER`** 设为 **`docker-container`**，显式改回需要 Docker API 的模式。  
-- 若 **`SHIP_RUNS_ON=ubuntu-latest`**（在 GitHub 托管机上跑 `ship`），工作流会**自动**使用 **`docker-container`**，无需再设 `BUILDX_DRIVER`。
+1. **`SHIP_RUNS_ON=ubuntu-latest`** → **`docker-container`**（GitHub 托管机自带 Docker）。  
+2. 否则若设置了仓库 Variable **`BUILDX_DRIVER`** → 使用该值（如 **`kubernetes`** / **`docker-container`**）。  
+3. 否则若存在 **`/var/run/docker.sock`** → **`docker-container`**。  
+4. 否则 → **`kubernetes`**（在集群内起 BuildKit，不依赖本机 Docker）。
+
+使用 **`docker/setup-buildx-action@v3`**（Node 20），避免部分 ARC 镜像无法运行 **v4（Node 24）** 的 action。
+
+**RBAC：** `driver=kubernetes` 时，runner 的 **ServiceAccount** 需能在 runner 所在命名空间内管理 **Deployment/StatefulSet/Pod** 等。模板见 **`deploy/k8s/arc-buildx-kubernetes-rbac.yaml`**（编辑占位符后执行 `kubectl apply -f deploy/k8s/arc-buildx-kubernetes-rbac.yaml`）。详见 [Buildx Kubernetes driver](https://docs.docker.com/build/builders/drivers/kubernetes/)。
 
 #### 直接改仓库代码
 
