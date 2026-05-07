@@ -163,11 +163,8 @@ jobs:
           echo "$HOME/bin" >> "$GITHUB_PATH"
           buildx version
           printf '%s\n' '[registry."192.168.10.121:30003"]' '  insecure = true' > /tmp/buildkitd.toml
-          NS="${BUILDX_K8S_NS:-}"
-          if [ -z "${NS}" ]; then
-            NS="$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null || true)"
-          fi
-          NS="${NS:-default}"
+          # 默认在 cicd-system 起 BuildKit；可用仓库 Variable BUILDX_K8S_NAMESPACE 覆盖
+          NS="${BUILDX_K8S_NS:-cicd-system}"
           echo "buildx kubernetes namespace=${NS}"
           BUILDER="ci-gha-${{ github.run_id }}-${{ github.run_attempt }}"
           buildx rm -f "$BUILDER" 2>/dev/null || true
